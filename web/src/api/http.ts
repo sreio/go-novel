@@ -1,28 +1,19 @@
 import axios, { AxiosError } from 'axios'
 
-export interface ApiError {
-  code: number
-  message: string
-  detail?: any
-}
+export interface ApiError { code: number; message: string; detail?: any }
 
-const instance = axios.create({
-  baseURL: '/api',
-  timeout: 60000,
-  withCredentials: false,
-})
+const http = axios.create({ baseURL: '/api', timeout: 15000 })
 
-instance.interceptors.response.use(
-  (resp) => resp,
+http.interceptors.response.use(
+  resp => resp,
   (error: AxiosError) => {
     const err: ApiError = {
       code: error.response?.status || 0,
-      message:
-        (error.response?.data as any)?.error || error.message || 'Network Error',
-      detail: error.response?.data,
+      message: (error.response?.data as any)?.error || error.message || 'Network Error',
+      detail: error.response?.data
     }
     return Promise.reject(err)
-  },
+  }
 )
 
-export default instance
+export default http

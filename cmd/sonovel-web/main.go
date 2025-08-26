@@ -80,13 +80,20 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type row struct{ Title, Author, ID, Source string }
+	type row struct {
+		Title    string `json:"title"`
+		Author   string `json:"author"`
+		ID       string `json:"id"`
+		Source   string `json:"source"`
+		Category string `json:"category"`
+		Update   string `json:"update"`
+	}
 	var result []row
 	ctx := r.Context()
 	for _, src := range s.sources {
 		items, _ := src.Search(ctx, q, 1)
 		for _, it := range items {
-			result = append(result, row{Title: it.Title, Author: it.Author, ID: it.ID, Source: src.Name()})
+			result = append(result, row{Title: it.Title, Author: it.Author, ID: it.ID, Source: src.Name(), Category: it.Category, Update: it.Update})
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": result})
@@ -112,14 +119,15 @@ func (s *Server) handleChapters(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type row struct {
-		Title, URL string
-		Index      int
+		Title string `json:"title"`
+		URL   string `json:"url"`
+		Index int    `json:"index"`
 	}
 	out := make([]row, len(chs))
 	for i, c := range chs {
 		out[i] = row{Title: c.Title, URL: c.URL, Index: c.Index}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"chapters": out})
+	writeJSON(w, http.StatusOK, map[string]any{"chapters": out, "source": src.Name()})
 }
 
 func (s *Server) handleChapter(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +164,7 @@ func (s *Server) handleChapter(w http.ResponseWriter, r *http.Request) {
 		"content": body,
 		"full":    full,
 		"limit":   limit,
+		"source":  src.Name(),
 	})
 }
 

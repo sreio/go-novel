@@ -8,10 +8,10 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-    },
+        changeOrigin: true
+      }
+    }
   },
   build: { outDir: 'dist' },
-  resolve: { alias: { '@': '/src' } },
+  resolve: { alias: { '@': '/src' } }
 })

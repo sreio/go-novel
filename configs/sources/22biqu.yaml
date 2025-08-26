@@ -1,4 +1,4 @@
-id: 22biqu
+id: 1
 name: 笔趣阁22
 base_url: https://www.22biqu.com
 charset: utf-8
@@ -13,17 +13,24 @@ headers:
 search:
   path: /ss
   param: searchkey
-  item_selector: ".txt-list li"
+  item_selector: ".txt-list li:nth-child(n+2)"
   title_selector: ".s2"
   author_selector: ".s4"
   link_selector: "a"
   link_attr: href
+  update_selector: ".s5"
+  category_selector: ".s1"
 
 chapters:
   list_selector: "body > div.container > div.row.row-section > div.layout.layout-col1 > div:nth-child(4) > ul li"
   title_selector: "a"
   url_selector: "a"
   url_attr: href
+  pagination:
+    next_selector: "body > div.container > div.row.row-section > div.layout.layout-col1 > div.index-container > a:nth-child(3)"   # 例如 “下一页”按钮
+    next_attr: "href"               # 默认 href，可省略
+    max_pages: 30                   # 安全上限
+    stop_on_same: true              # 如下一页没有新增则停止
 
 content:
   content_selector: ".content"
