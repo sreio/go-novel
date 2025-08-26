@@ -5,7 +5,12 @@
         <div class="brand" @click="$router.push({name:'home'})">go-novel</div>
       </el-header>
       <el-main>
-        <router-view />
+        <router-view v-slot="{ Component, route }">
+          <keep-alive :include="['SearchPage']">
+            <component v-if="route.meta.keepAlive" :is="Component" />
+          </keep-alive>
+          <component v-if="!route.meta.keepAlive" :is="Component" />
+        </router-view>
       </el-main>
     </el-container>
   </el-config-provider>

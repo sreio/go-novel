@@ -1,0 +1,32 @@
+id: dxmwx
+name: 大熊猫文学网
+base_url: https://www.dxmwx.org
+charset: zh-Hans
+rate_limit: { rps: 2, burst: 4 }
+retries: 3
+timeout_seconds: 15
+proxy: ""
+
+headers:
+  Accept-Language: "zh-CN,zh;q=0.9"
+
+search:
+  url: https://www.dxmwx.org/list/{{query}}
+  item_selector: "#ListContents > div:nth-child(odd) > div.right_wid"
+  title_selector: ".margin0h5 > a.fonttext"
+  author_selector: ".margin0h5 > a:nth-child(2)"
+  link_selector: ".margin0h5 > a.fonttext"
+  link_attr: href
+  update_selector: "div:nth-child(4) > span"
+
+chapters:
+  toc:
+    url_template: "https://www.dxmwx.org/chapter/{{id}}.html"
+    id_from_url_regex: "/book/(\\d+)\\.html"   # 直接从传入 URL 提取数字 ID
+  list_selector: "body > div > div:nth-child(4) > div:nth-child(2n+5) > span"
+  title_selector: "a"
+  url_selector: "a"
+  url_attr: href
+
+content:
+  content_selector: "#Lab_Contents"

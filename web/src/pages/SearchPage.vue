@@ -29,6 +29,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'SearchPage' })
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiSearch, type SearchItem } from '@/api/client'

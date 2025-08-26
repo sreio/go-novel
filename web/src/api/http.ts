@@ -2,7 +2,7 @@ import axios, { AxiosError } from 'axios'
 
 export interface ApiError { code: number; message: string; detail?: any }
 
-const http = axios.create({ baseURL: '/api', timeout: 15000 })
+const http = axios.create({ baseURL: '/api', timeout: 60000 })
 
 http.interceptors.response.use(
   resp => resp,

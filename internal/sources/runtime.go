@@ -3,8 +3,11 @@ package sources
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -38,44 +41,161 @@ func (s *ConfigSource) Name() string {
 }
 
 func (s *ConfigSource) Search(ctx context.Context, keyword string, page int) ([]Book, error) {
-	q := url.Values{}
-	p := s.cfg.Search.Param
-	if p == "" {
-		p = "q"
-	}
-	q.Set(p, keyword)
-	doc, _, err := s.client.DocumentBy(ctx, s.cfg.BaseURL, s.cfg.Search.Path, http.MethodGet, q, s.cfg.Headers, s.cfg.Charset)
-	if err != nil {
-		return nil, err
-	}
-	sel := s.cfg.Search.ItemSelector
-	if sel == "" {
+	sc := s.cfg.Search
+	if sc.ItemSelector == "" {
 		return nil, errors.New("search.item_selector empty")
 	}
+
+	// 1) 构建 URL / Query
+	// 优先：URL 模板
+	var doc *goquery.Document
+	//var finalURL []byte
+	var err error
+
+	if strings.TrimSpace(sc.URLTemplate) != "" {
+		// 模板替换 {{query}}
+		tpl := strings.ReplaceAll(sc.URLTemplate, "{{query}}", url.QueryEscape(keyword))
+
+		// 如需分页/额外参数，这里补一下
+		u, perr := url.Parse(tpl)
+		if perr != nil {
+			return nil, fmt.Errorf("invalid search.url: %w", perr)
+		}
+		q := u.Query()
+		// 额外参数
+		for k, v := range sc.ExtraParams {
+			q.Set(k, v)
+		}
+		u.RawQuery = q.Encode()
+
+		doc, _, err = s.client.DocumentURL(ctx, u.String(), s.cfg.Headers, s.cfg.Charset)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// path + param 方式（你原来的）
+		q := url.Values{}
+		p := sc.Param
+		if p == "" {
+			p = "q"
+		}
+		q.Set(p, keyword)
+		// 额外参数
+		for k, v := range sc.ExtraParams {
+			q.Set(k, v)
+		}
+
+		// 用你已有的 DocumentBy：注意把 base + path 交给它
+		doc, _, err = s.client.DocumentBy(ctx, s.cfg.BaseURL, sc.Path, http.MethodGet, q, s.cfg.Headers, s.cfg.Charset)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// 2) 解析（与原逻辑相同，但使用 finalURL 做相对链接基准）
+	linkSel := sc.LinkSelector
+	if linkSel == "" {
+		linkSel = "a"
+	}
+	attr := sc.LinkAttr
+	if attr == "" {
+		attr = "href"
+	}
+
 	var items []Book
-	doc.Find(sel).Each(func(i int, s2 *goquery.Selection) {
-		title := strings.TrimSpace(s2.Find(s.cfg.Search.TitleSelector).First().Text())
-		category := strings.TrimSpace(s2.Find(s.cfg.Search.CategorySelector).First().Text())
-		update := strings.TrimSpace(s2.Find(s.cfg.Search.UpdateSelector).First().Text())
+	seen := make(map[string]bool)
+
+	doc.Find(sc.ItemSelector).Each(func(_ int, s2 *goquery.Selection) {
+		title := strings.TrimSpace(s2.Find(sc.TitleSelector).First().Text())
+
+		category := ""
+		if sc.CategorySelector != "" {
+			category = strings.TrimSpace(s2.Find(sc.CategorySelector).First().Text())
+		}
+
+		update := ""
+		if sc.UpdateSelector != "" {
+			update = strings.TrimSpace(s2.Find(sc.UpdateSelector).First().Text())
+		}
+
 		author := ""
-		if s.cfg.Search.AuthorSelector != "" {
-			author = strings.TrimSpace(s2.Find(s.cfg.Search.AuthorSelector).First().Text())
+		if sc.AuthorSelector != "" {
+			author = strings.TrimSpace(s2.Find(sc.AuthorSelector).First().Text())
 		}
-		linkSel := s.cfg.Search.LinkSelector
-		if linkSel == "" {
-			linkSel = "a"
-		}
-		attr := s.cfg.Search.LinkAttr
-		if attr == "" {
-			attr = "href"
-		}
+
 		href, _ := s2.Find(linkSel).First().Attr(attr)
-		href = absURL(s.cfg.BaseURL, strings.TrimSpace(href))
-		if title != "" && href != "" {
-			items = append(items, Book{Title: title, Author: author, ID: href, Category: category, Update: update})
+		href = absURL(s.cfg.BaseURL, strings.TrimSpace(href)) // ★ 用最终 URL 做基准
+
+		if title == "" || href == "" {
+			return
 		}
+		if seen[href] {
+			return
+		}
+		seen[href] = true
+
+		items = append(items, Book{
+			Title:    title,
+			Author:   author,
+			ID:       href, // 用 URL 作为唯一 ID
+			Category: category,
+			Update:   update,
+		})
 	})
 	return items, nil
+}
+
+// 在 Chapters 一开始加一个工具：根据配置把 bookURL → tocURL
+func (s *ConfigSource) resolveTOCURL(ctx context.Context, bookURL string) (string, error) {
+	toc := s.cfg.Chapters.TOC
+	if strings.TrimSpace(toc.URLTemplate) == "" {
+		return bookURL, nil // 没配置就直接用传入的 URL 当目录页
+	}
+
+	// 1) 先用 IDFromURLRegex 从 URL 本身提取
+	if strings.TrimSpace(toc.IDFromURLRegex) != "" {
+		re, err := regexp.Compile(toc.IDFromURLRegex)
+		if err == nil {
+			if m := re.FindStringSubmatch(bookURL); len(m) >= 2 {
+				id := m[1]
+				tocURL := strings.ReplaceAll(toc.URLTemplate, "{{id}}", id)
+				return tocURL, nil
+			}
+		}
+	}
+
+	// 2) 否则请求详情页 HTML，再用选择器/正则提取 ID
+	doc, _, err := s.client.DocumentURL(ctx, bookURL, s.cfg.Headers, s.cfg.Charset)
+	if err != nil {
+		return "", err
+	}
+	sel := strings.TrimSpace(toc.IDSelector)
+	if sel == "" {
+		return "", fmt.Errorf("toc.url_template set but no id_from_url_regex nor id_selector")
+	}
+	attr := toc.IDAttr
+	if attr == "" {
+		attr = "href"
+	}
+	raw, _ := doc.Find(sel).First().Attr(attr)
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("toc id not found by selector")
+	}
+	id := raw
+	if strings.TrimSpace(toc.IDRegex) != "" {
+		re, err := regexp.Compile(toc.IDRegex)
+		if err != nil {
+			return "", err
+		}
+		m := re.FindStringSubmatch(raw)
+		if len(m) < 2 {
+			return "", fmt.Errorf("toc id not match by id_regex")
+		}
+		id = m[1]
+	}
+	tocURL := strings.ReplaceAll(toc.URLTemplate, "{{id}}", id)
+	return tocURL, nil
 }
 
 func (s *ConfigSource) Chapters(ctx context.Context, bookURL string, id string) ([]Chapter, error) {
@@ -109,6 +229,14 @@ func (s *ConfigSource) Chapters(ctx context.Context, bookURL string, id string) 
 		})
 		return list, nil
 	}
+
+	// 先把 bookURL 解析成实际目录页 URL（若配置了 TOC 模板）
+	bookURL, err := s.resolveTOCURL(ctx, bookURL)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Println(bookURL)
 
 	// 先抓第一页
 	doc, _, err := s.client.DocumentURL(ctx, bookURL, s.cfg.Headers, s.cfg.Charset)

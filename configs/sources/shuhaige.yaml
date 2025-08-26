@@ -1,0 +1,31 @@
+id: shuhaige
+name: 书海阁
+base_url: https://www.shuhaige.net
+charset: utf-8
+rate_limit: { rps: 2, burst: 4 }
+retries: 3
+timeout_seconds: 15
+proxy: ""
+
+headers:
+  Accept-Language: "zh-CN,zh;q=0.9"
+
+search:
+  path: /search.html
+  param: searchkey
+  item_selector: "#sitembox dl"
+  title_selector: "dd:nth-child(2) > h3 > a"
+  author_selector: "dd:nth-child(3) > span:nth-child(1)"
+  link_selector: "dd:nth-child(2) > h3 > a"
+  link_attr: href
+  update_selector: "dd:nth-child(5) > span"
+  category_selector: "dd:nth-child(3) > span:nth-child(3)"
+
+chapters:
+  list_selector: "#list > dl > dd:nth-child(n+15)"
+  title_selector: "a"
+  url_selector: "a"
+  url_attr: href
+
+content:
+  content_selector: ".content"

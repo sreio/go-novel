@@ -10,8 +10,15 @@ type RateConfig struct {
 }
 
 type SearchConfig struct {
-	Path             string `yaml:"path"`          // 如 /search
-	Param            string `yaml:"param"`         // 如 q
+	// 方式一：新方式（推荐）
+	Path  string `yaml:"path"`  // 例如: /search.php
+	Param string `yaml:"param"` // 例如: q
+	// 方式二：旧/模板方式（可选）
+	URLTemplate string `yaml:"url"` // 例如: https://site/search.php?q={{query}}
+
+	// 额外 query 参数（可选）
+	ExtraParams map[string]string `yaml:"extra_params"` // 如 { s: "1", ie: "utf-8" }
+
 	ItemSelector     string `yaml:"item_selector"` // 列表项选择器
 	TitleSelector    string `yaml:"title_selector"`
 	AuthorSelector   string `yaml:"author_selector"`
@@ -40,6 +47,20 @@ type ChaptersConfig struct {
 		MaxPages   int    `yaml:"max_pages"`    // 安全上限，默认 10
 		StopOnSame bool   `yaml:"stop_on_same"` // 如果新页数据与上一页相同则停止
 	} `yaml:"pagination"`
+
+	// 目录页推导配置
+	TOC struct {
+		// 目录页 URL 模板，例如 https://www.dxmwx.org/chapter/{{id}}.html
+		URLTemplate string `yaml:"url_template"`
+
+		// 从“详情页 URL”里用正则抓取 ID，例如 /book/(\d+)\.html
+		IDFromURLRegex string `yaml:"id_from_url_regex"`
+
+		// 或者：从“详情页 HTML”里用选择器拿到能含有 ID 的属性（如 href 或 data-id）
+		IDSelector string `yaml:"id_selector"` // 例：a[href^="/chapter/"]
+		IDAttr     string `yaml:"id_attr"`     // 默认为 href
+		IDRegex    string `yaml:"id_regex"`    // 可选，对上面的属性再跑一次正则提取 (\d+)
+	} `yaml:"toc"`
 }
 
 type ContentConfig struct {
@@ -76,17 +97,20 @@ type Chapter struct {
 	ID    string `json:"id"`
 }
 
-func absURL(base string, href string) string {
+func absURL(base, href string) string {
 	if href == "" {
-		return base
+		return ""
 	}
-	bu, err := url.Parse(base)
+	u, err := url.Parse(href)
 	if err != nil {
-		return href
+		return ""
 	}
-	hu, err := url.Parse(href)
+	if u.IsAbs() {
+		return u.String()
+	}
+	b, err := url.Parse(base)
 	if err != nil {
-		return href
+		return ""
 	}
-	return bu.ResolveReference(hu).String()
+	return b.ResolveReference(u).String()
 }

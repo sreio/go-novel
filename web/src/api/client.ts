@@ -20,6 +20,6 @@ export async function apiChapter(url: string, opts?: { limit?: number; full?: bo
 }
 
 export async function apiDownload(url: string, format: 'txt'|'epub'|'pdf'): Promise<Blob> {
-  const { data } = await http.get(`/download`, { params: { url, format }, responseType: 'blob' })
+  const { data } = await http.get(`/download`, { params: { url, format }, responseType: 'blob', timeout: 0 })
   return data
 }
