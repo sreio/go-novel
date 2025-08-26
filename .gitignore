@@ -1,0 +1,6 @@
+bin/
+outputs/
+web/node_modules/
+web/dist/
+*.log
+.DS_Store

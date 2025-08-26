@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build executable
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            EXT=".exe"
+          fi
+          mkdir -p bin
+          GOOS=${{ matrix.goos }}           GOARCH=${{ matrix.goarch }}           CGO_ENABLED=0           go build -ldflags "-s -w" -o bin/novel_${{ matrix.goos }}_${{ matrix.goarch }}${EXT} ./cmd/sonovel-cli
+
+      - name: Install upx (optional)
+        run: |
+          sudo apt-get update && sudo apt-get install -y upx || true
+          ls -lh bin/
+
+      - name: Compress binaries with upx (best effort)
+        run: |
+          if command -v upx >/dev/null 2>&1; then upx --lzma --best bin/* || true; fi
+          ls -lh bin/
+
+      - name: Upload new asset to existing release
+        run: |
+          gh release upload ${{ github.ref_name }} bin/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push multi-platform image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: sreio/go-novel:${{ github.ref_name }},sreio/go-novel:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

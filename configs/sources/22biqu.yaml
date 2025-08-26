@@ -1,0 +1,29 @@
+id: 22biqu
+name: 笔趣阁22
+base_url: https://www.22biqu.com
+charset: utf-8
+rate_limit: { rps: 2, burst: 4 }
+retries: 3
+timeout_seconds: 15
+proxy: ""
+
+headers:
+  Accept-Language: "zh-CN,zh;q=0.9"
+
+search:
+  path: /ss
+  param: searchkey
+  item_selector: ".txt-list li"
+  title_selector: ".s2"
+  author_selector: ".s4"
+  link_selector: "a"
+  link_attr: href
+
+chapters:
+  list_selector: "body > div.container > div.row.row-section > div.layout.layout-col1 > div:nth-child(4) > ul li"
+  title_selector: "a"
+  url_selector: "a"
+  url_attr: href
+
+content:
+  content_selector: ".content"
