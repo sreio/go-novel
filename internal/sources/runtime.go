@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -235,8 +234,6 @@ func (s *ConfigSource) Chapters(ctx context.Context, bookURL string, id string) 
 	if err != nil {
 		return nil, err
 	}
-
-	log.Println(bookURL)
 
 	// 先抓第一页
 	doc, _, err := s.client.DocumentURL(ctx, bookURL, s.cfg.Headers, s.cfg.Charset)
