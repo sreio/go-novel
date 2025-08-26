@@ -375,8 +375,8 @@ func (s *ConfigSource) Content(ctx context.Context, ch Chapter) (string, error) 
 	}
 	var parts []string
 	doc.Find(sel).Each(func(_ int, p *goquery.Selection) {
-		html, _ := p.Html()
-		t := strings.TrimSpace(html)
+		//html, _ := p.Html()
+		t := strings.TrimSpace(p.Text())
 		if t != "" {
 			parts = append(parts, t)
 		}
