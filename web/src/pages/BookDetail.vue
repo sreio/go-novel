@@ -18,6 +18,21 @@
             <el-button type="primary" :loading="downloading" @click="download">下载</el-button>
           </div>
         </div>
+        
+        <!-- 下载进度显示 -->
+        <div v-if="downloading" class="progress-container">
+          <div class="progress-info">
+            <span>下载进度: {{ downloadProgress }}%</span>
+            <span>线程: {{ activeThreads }}/8</span>
+            <span>章节: {{ completedNum }} / {{ totalChapters }} 章</span>
+          </div>
+          <el-progress 
+            :percentage="downloadProgress" 
+            :stroke-width="15" 
+            :text-inside="true"
+            status="success"
+          />
+        </div>
       </template>
 
       <el-table :data="pagedChapters" size="small" stripe border height="60vh" v-loading="loading">
@@ -93,6 +108,11 @@ const full = ref(false)
 // download
 const fmt = ref<'txt'|'epub'|'pdf'>('txt')
 const downloading = ref(false)
+const downloadProgress = ref(0)
+const activeThreads = ref(0)
+const totalChapters = ref(0)
+const completedNum = ref(0)
+let eventSource: EventSource | null = null
 
 function goBack(){ router.push({ name: 'home' }) }
 
@@ -124,14 +144,64 @@ async function openPreview(c: ChapterRow){
   }finally{ previewLoading.value = false }
 }
 
+function setupProgressListener() {
+  if (eventSource) {
+    eventSource.close()
+  }
+  
+  eventSource = new EventSource('/api/progress')
+  
+  eventSource.addEventListener('connected', (event) => {
+    console.log('SSE connected:', event)
+  })
+  
+  eventSource.addEventListener('progress', (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      downloadProgress.value = Math.round(data.percentage)
+      activeThreads.value = data.activeThreads
+      totalChapters.value = data.totalChapters
+      completedNum.value = data.completed
+    } catch (e) {
+      console.error('Failed to parse progress event:', e)
+    }
+  })
+  
+  eventSource.onerror = (error) => {
+    console.error('SSE error:', error)
+    if (eventSource) {
+      eventSource.close()
+      eventSource = null
+    }
+  }
+}
+
+function cleanupProgressListener() {
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+  downloadProgress.value = 0
+  activeThreads.value = 0
+  totalChapters.value = 0
+  completedNum.value = 0
+}
+
 async function download(){
   if (!id.value) return
   downloading.value = true
+  setupProgressListener()
+  
   try{
     const blob = await apiDownload(id.value, fmt.value)
     saveBlob(blob, `${title.value || 'book'}.${fmt.value}`)
-  }catch(e:any){ ElMessage.error(e?.message || '下载失败') }
-  finally{ downloading.value = false }
+  }catch(e:any){ 
+    ElMessage.error(e?.message || '下载失败') 
+  }
+  finally{ 
+    downloading.value = false
+    cleanupProgressListener()
+  }
 }
 
 onMounted(loadChapters)
@@ -152,4 +222,23 @@ watch(full, () => {
 .ttl{font-weight:700; font-size:18px; min-width:0; max-width:40vw; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
 .preview{white-space:pre-wrap; font-size:13px; line-height:1.6;}
 .pg-wrap{display:flex; justify-content:flex-end; padding:.5rem 0;}
+
+.progress-container {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: #f5f7fa;
+  border-radius: 4px;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-size: 14px;
+  color: #606266;
+}
+
+.progress-info span {
+  margin-right: 1rem;
+}
 </style>

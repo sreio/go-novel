@@ -2,12 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 	"unicode/utf8"
 
 	fepub "github.com/sreio/go-novel/internal/format/epub"
@@ -25,6 +28,14 @@ type Server struct {
 	sourcesDir  string
 	concurrency int
 	sources     []*sources.ConfigSource
+	progressCh  chan ProgressEvent
+}
+
+type ProgressEvent struct {
+	TotalChapters int     `json:"totalChapters"`
+	Completed     int     `json:"completed"`
+	ActiveThreads int     `json:"activeThreads"`
+	Percentage    float64 `json:"percentage"`
 }
 
 func main() {
@@ -32,6 +43,7 @@ func main() {
 		router:      chi.NewRouter(),
 		sourcesDir:  getEnv("SOURCES_DIR", "./configs/sources"),
 		concurrency: atoi(getEnv("CONCURRENCY", "8"), 8),
+		progressCh:  make(chan ProgressEvent, 100),
 	}
 
 	srv.router.Use(middleware.RealIP)
@@ -44,6 +56,7 @@ func main() {
 	srv.router.Get("/api/books/chapters", srv.handleChapters)
 	srv.router.Get("/api/chapter", srv.handleChapter)
 	srv.router.Get("/api/download", srv.handleDownload)
+	srv.router.Get("/api/progress", srv.handleProgress)
 
 	fs := http.FileServer(http.Dir("./web/dist"))
 	srv.router.Handle("/*", fs)
@@ -196,22 +209,67 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	type text struct{ Title, Content string }
 	out := make([]text, len(chs))
 
+	// 记录完成章节数和线程信息
+	var completed int32 = 0
+	var activeThreads int32 = 0
+	maxThreads := s.concurrency
+
+	// 创建进度通道
+	progress := make(chan int, 100)
+	defer close(progress)
+
+	// 启动进度推送协程
+	go func() {
+		for p := range progress {
+			percentage := float64(p) * 100 / float64(len(chs))
+			log.Printf("下载进度: %d/%d (%.1f%%)", p, len(chs), percentage)
+
+			// 推送进度到SSE
+			select {
+			case s.progressCh <- ProgressEvent{
+				TotalChapters: len(chs),
+				Completed:     p,
+				ActiveThreads: int(atomic.LoadInt32(&activeThreads)),
+				Percentage:    percentage,
+			}:
+			default:
+				// 如果通道满，丢弃旧消息
+			}
+		}
+	}()
+
 	sem := make(chan struct{}, s.concurrency)
 	g, gctx := errgroup.WithContext(ctx)
+
 	for i := range chs {
 		i := i
 		g.Go(func() error {
 			select {
 			case sem <- struct{}{}:
+				atomic.AddInt32(&activeThreads, 1)
+				log.Printf("线程启动: 当前活跃线程 %d/%d", atomic.LoadInt32(&activeThreads), maxThreads)
 			case <-gctx.Done():
 				return gctx.Err()
 			}
-			defer func() { <-sem }()
+			defer func() {
+				<-sem
+				atomic.AddInt32(&activeThreads, -1)
+				log.Printf("线程完成: 当前活跃线程 %d/%d", atomic.LoadInt32(&activeThreads), maxThreads)
+			}()
+
 			content, err := src.Content(gctx, chs[i])
 			if err != nil {
 				return err
 			}
 			out[i] = text{Title: chs[i].Title, Content: content}
+
+			// 更新进度（使用原子操作确保顺序）
+			current := atomic.AddInt32(&completed, 1)
+			select {
+			case progress <- int(current):
+			default:
+			}
+
 			return nil
 		})
 	}
@@ -260,6 +318,40 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", "attachment; filename="+name)
 	http.ServeFile(w, r, dst)
+}
+
+func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Cache-Control")
+	w.Header().Set("Access-Control-Expose-Headers", "Cache-Control")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// 发送初始消息
+	fmt.Fprintf(w, "event: connected\ndata: {\"message\":\"SSE connected\"}\n\n")
+	flusher.Flush()
+
+	for {
+		select {
+		case event := <-s.progressCh:
+			data, _ := json.Marshal(event)
+			fmt.Fprintf(w, "event: progress\ndata: %s\n\n", data)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		case <-time.After(30 * time.Second):
+			// 发送心跳保持连接
+			fmt.Fprintf(w, ": heartbeat\n\n")
+			flusher.Flush()
+		}
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

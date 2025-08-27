@@ -2,7 +2,7 @@ id: dxmwx
 name: 大熊猫文学网
 base_url: https://www.dxmwx.org
 charset: zh-Hans
-rate_limit: { rps: 2, burst: 4 }
+rate_limit: { rps: 10, burst: 20 }
 retries: 3
 timeout_seconds: 15
 proxy: ""
