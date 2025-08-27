@@ -52,7 +52,7 @@ async function doSearch(){
 }
 
 function goDetail(row: SearchItem){
-  router.push({ name: 'book', query: { id: row.id, title: row.title, source: row.source } })
+  router.push({ name: 'book', query: { id: row.id, title: row.title, author: row.author, source: row.source } })
 }
 </script>
 

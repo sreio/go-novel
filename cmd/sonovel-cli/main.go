@@ -104,7 +104,7 @@ func chooseSourceByURL(all []*sources.ConfigSource, u string) *sources.ConfigSou
 }
 
 func cmdDownload() *cobra.Command {
-	var bookURL, format string
+	var bookURL, format, bookTitle, bookAuthor string
 	cmd := &cobra.Command{
 		Use: "download",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -157,11 +157,27 @@ func cmdDownload() *cobra.Command {
 			if err := os.MkdirAll(outputDir, 0o755); err != nil {
 				return err
 			}
-			fname := "book." + strings.ToLower(format)
+			// 构建文件名: 渠道名_书名_作者.格式
+		fname := fmt.Sprintf("%s_%s_%s.%s", src.Name(), bookTitle, bookAuthor, strings.ToLower(format))
+		if bookTitle == "" {
+			fname = "book." + strings.ToLower(format)
+		}
+		
+		// 清理文件名中的非法字符
+		fname = strings.ReplaceAll(fname, "/", "_")
+		fname = strings.ReplaceAll(fname, "\\", "_")
+		fname = strings.ReplaceAll(fname, ":", "_")
+		fname = strings.ReplaceAll(fname, "*", "_")
+		fname = strings.ReplaceAll(fname, "?", "_")
+		fname = strings.ReplaceAll(fname, "\"", "_")
+		fname = strings.ReplaceAll(fname, "<", "_")
+		fname = strings.ReplaceAll(fname, ">", "_")
+		fname = strings.ReplaceAll(fname, "|", "_")
 			if u, e := url.Parse(bookURL); e == nil {
 				base := filepath.Base(u.Path)
 				if base != "" && base != "/" {
-					fname = base + "." + strings.ToLower(format)
+					bookTitle = base
+					fname = fmt.Sprintf("%s_%s_%s.%s", src.Name(), bookTitle, bookAuthor, strings.ToLower(format))
 				}
 			}
 			dst := filepath.Join(outputDir, fname)
@@ -178,14 +194,14 @@ func cmdDownload() *cobra.Command {
 				for i, c := range out {
 					chapters[i] = fepub.Chapter{Title: c.Title, Content: c.Content}
 				}
-				meta := fepub.Meta{Title: "Book", Author: ""}
+				meta := fepub.Meta{Title: bookTitle, Author: bookAuthor}
 				return fepub.Save(dst, meta, chapters)
 			case "pdf":
 				chapters := make([]fpdf.Chapter, len(out))
 				for i, c := range out {
 					chapters[i] = fpdf.Chapter{Title: c.Title, Content: c.Content}
 				}
-				meta := fpdf.Meta{Title: "Book", Author: ""}
+				meta := fpdf.Meta{Title: bookTitle, Author: bookAuthor}
 				return fpdf.Save(dst, meta, chapters)
 			default:
 				return fmt.Errorf("unknown format: %s", format)
@@ -194,6 +210,8 @@ func cmdDownload() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&bookURL, "url", "", "书籍详情页 URL")
 	cmd.Flags().StringVarP(&format, "format", "f", "txt", "输出格式：txt|epub|pdf")
+	cmd.Flags().StringVar(&bookTitle, "title", "", "书籍标题")
+	cmd.Flags().StringVar(&bookAuthor, "author", "", "书籍作者")
 	_ = cmd.MarkFlagRequired("url")
 	return cmd
 }

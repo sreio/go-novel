@@ -85,6 +85,7 @@ import { ElMessage } from 'element-plus'
 const route = useRoute(); const router = useRouter()
 const id = ref<string>(String(route.query.id || ''))
 const title = ref<string>(String(route.query.title || ''))
+const author = ref<string>(String(route.query.author || ''))
 const chapters = ref<ChapterRow[]>([])
 const loading = ref(false)
 const source = ref(String(route.query.source || ''))
@@ -193,8 +194,8 @@ async function download(){
   setupProgressListener()
   
   try{
-    const blob = await apiDownload(id.value, fmt.value)
-    saveBlob(blob, `${title.value || 'book'}.${fmt.value}`)
+    const blob = await apiDownload(id.value, fmt.value, title.value, author.value)
+    saveBlob(blob, `${source.value}_${title.value || 'book'}_${author.value || 'unknown'}.${fmt.value}`)
   }catch(e:any){ 
     ElMessage.error(e?.message || '下载失败') 
   }
@@ -205,7 +206,7 @@ async function download(){
 }
 
 onMounted(loadChapters)
-watch(() => route.query, () => { id.value = String(route.query.id||''); title.value = String(route.query.title||''); loadChapters() })
+watch(() => route.query, () => { id.value = String(route.query.id||''); title.value = String(route.query.title||''); author.value = String(route.query.author||''); loadChapters() })
 watch(full, () => {
   // 切换完整/截断时，如果抽屉打开且有标题，则重新拉取
   if (drawer.value && previewTitle.value) {

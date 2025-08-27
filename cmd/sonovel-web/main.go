@@ -184,6 +184,8 @@ func (s *Server) handleChapter(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	u := strings.TrimSpace(r.URL.Query().Get("url"))
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	bookTitle := strings.TrimSpace(r.URL.Query().Get("title"))
+	bookAuthor := strings.TrimSpace(r.URL.Query().Get("author"))
 	if u == "" || (format != "txt" && format != "epub" && format != "pdf") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing or invalid url/format"})
 		return
@@ -282,7 +284,23 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	name := safeNameFromURL(u) + "." + format
+	// 构建文件名: 渠道名_书名_作者.格式
+	if bookTitle == "" {
+		bookTitle = safeNameFromURL(u)
+	}
+	name := fmt.Sprintf("%s_%s_%s.%s", src.Name(), bookTitle, bookAuthor, format)
+
+	// 清理文件名中的非法字符
+	name = strings.ReplaceAll(name, "/", "_")
+	name = strings.ReplaceAll(name, "\\", "_")
+	name = strings.ReplaceAll(name, ":", "_")
+	name = strings.ReplaceAll(name, "*", "_")
+	name = strings.ReplaceAll(name, "?", "_")
+	name = strings.ReplaceAll(name, "\"", "_")
+	name = strings.ReplaceAll(name, "<", "_")
+	name = strings.ReplaceAll(name, ">", "_")
+	name = strings.ReplaceAll(name, "|", "_")
+
 	dst := filepath.Join("./outputs", name)
 
 	switch format {
@@ -300,7 +318,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		for i, c := range out {
 			chapters[i] = fepub.Chapter{Title: c.Title, Content: c.Content}
 		}
-		if err := fepub.Save(dst, fepub.Meta{Title: name, Author: ""}, chapters); err != nil {
+		if err := fepub.Save(dst, fepub.Meta{Title: bookTitle, Author: bookAuthor}, chapters); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -309,7 +327,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		for i, c := range out {
 			chapters[i] = fpdf.Chapter{Title: c.Title, Content: c.Content}
 		}
-		if err := fpdf.Save(dst, fpdf.Meta{Title: name, Author: ""}, chapters); err != nil {
+		if err := fpdf.Save(dst, fpdf.Meta{Title: bookTitle, Author: bookAuthor}, chapters); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
